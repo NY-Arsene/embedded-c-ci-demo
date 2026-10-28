@@ -1,0 +1,45 @@
+name: Embedded C CI Pipeline
+
+# 1. Déclenchement automatique à chaque push ou Merge/Pull Request sur main
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-test:
+    # 2. Environnement vierge et reproductible (machine virtuelle Ubuntu)
+    runs-on: ubuntu-latest
+
+    steps:
+      # Étape A : Le serveur récupère ton code depuis GitHub
+      - name: Checkout du code source
+        uses: actions/checkout@v4
+
+      # Étape B : On installe le compilateur croisé ARM (STM32)
+      - name: Installation de la toolchain ARM (arm-none-eabi-gcc)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi
+
+      # Étape C : Compilation et exécution des tests unitaires sur le serveur
+      - name: Execution des tests unitaires (Host GCC)
+        run: |
+          gcc -Wall -Wextra -Werror sensor.c test_sensor.c -o run_tests
+          ./run_tests
+
+      # Étape D : Compilation croisée pour Cortex-M4 (comme ton STM32F446RE)
+      # On intègre les 7 premiers caractères du commit Git dans le nom du fichier
+      - name: Cross-compilation pour cible STM32 Cortex-M4
+        run: |
+          SHORT_SHA=$(echo $GITHUB_SHA | cut -c1-7)
+          arm-none-eabi-gcc -mcpu=cortex-m4 -mthumb -Wall -Wextra -Werror -O2 -c sensor.c -o sensor_stm32_${SHORT_SHA}.o
+          arm-none-eabi-size sensor_stm32_${SHORT_SHA}.o
+
+      # Étape E : Archivage de l'artefact avec traçabilité
+      - name: Archivage du binaire compile
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-module-${{ github.sha }}
+          path: sensor_stm32_*.o
